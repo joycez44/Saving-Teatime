@@ -1,0 +1,397 @@
+//obj_Player
+
+//CREATE EVENT - Run when a player object is initialized.
+	///Initialize vars
+	init_grv = 0.3
+	grv = init_grv;
+	accel = .05;
+	float_accel = .01;
+	float_reset_speed = true;
+
+	hspd = 0;
+	vspd = .3;
+	vspd_cap = 16;
+
+	mvspd = 5;
+	jmpspd = 13;
+	jmpspd_cap = -16;
+
+	prev_move = 1;
+
+	active = true
+
+	dbl_jump = true;
+
+	image_speed = .15;
+	float_fuel = 0;
+
+	invincibility = false;
+	drawShield = false;
+
+	start_x = x;
+	start_y = y;
+
+	ini_open("teatime.ini")
+	shieldTime = 0
+	shieldDuration = ini_read_real("upgrades", "shield", 5);
+	max_float_fuel = ini_read_real("upgrades", "float", 1);
+	ini_close();
+	
+	/// Create dust cloud system
+
+	emit_burst = true;
+
+	dust_cloud = part_system_create();
+	part_system_depth(dust_cloud, 100);
+
+	particle1 = part_type_create();
+	part_type_shape(particle1,pt_shape_disk);
+	part_type_size(particle1,0.07,0.1,0,0);
+	part_type_scale(particle1,1,1);
+	part_type_color1(particle1,9028337);
+	part_type_speed(particle1,1,1.50,0,0);
+	part_type_direction(particle1,130,180,0,0);
+	part_type_gravity(particle1,0,270);
+	part_type_orientation(particle1,0,0,0,0,1);
+	part_type_blend(particle1,0);
+	part_type_life(particle1,5,10);
+
+	emitter1 = part_emitter_create(dust_cloud);
+	
+	
+	/// Sparkle particle system
+
+	sparkles = part_system_create();
+	//part_system_depth(sparkles, 100);
+
+	particle2 = part_type_create();
+	part_type_sprite(particle2,spr_Sparkle,0,0,0);
+	part_type_size(particle2,0.20,0.50,0,0);
+	part_type_scale(particle2,1,1);
+	part_type_color1(particle2,8454143);
+	part_type_alpha1(particle2,1);
+	part_type_speed(particle2,1,1,0,0);
+	part_type_direction(particle2,0,359,0,0);
+	part_type_gravity(particle2,0,270);
+	part_type_orientation(particle2,0,0,0,0,1);
+	part_type_blend(particle2,1);
+	part_type_life(particle2,60,60);
+
+	emitter2 = part_emitter_create(sparkles);
+
+
+// STEP EVENT - Run each time a new frame is rendered.
+
+	if (!global.pause) {
+
+	///Physics and movement
+
+	//Check if key is being pressed
+	key_right = keyboard_check(ord("D"));
+	key_left = -keyboard_check(ord("A"));
+	key_jump = keyboard_check_pressed(ord("W"));
+	key_float = keyboard_check(vk_space);
+
+	hmove = key_right + key_left;
+
+	//Move - calculate horizontal speed
+	if (place_meeting(x, y + 1, obj_Ice)) {
+		hspd = prev_move * (mvspd + 3);
+	}
+	else {
+		if (hmove != 0 ) {
+			prev_move = hmove;
+		}
+		hspd = hmove * mvspd;
+	}
+
+	//Jump - calculate vertical speed
+	if (key_jump && !place_meeting(x, y + 1, obj_Ice)) {
+		if (place_meeting(x, y+1, obj_Floor)) 
+		{
+			if (!place_meeting(x, y+1, obj_Floor)) {
+				dbl_jump = false
+			}
+			
+			if (vspd < -jmpspd) {
+				vspd -= jmpspd;
+			}
+			else  {
+				vspd = -jmpspd;
+			}
+			grv = init_grv;
+		}
+	}
+
+	if (vspd < jmpspd_cap) {
+		vspd = jmpspd_cap;
+	}
+
+	//Floating - adjust vertical speed if player is using floating power up
+	if (key_float && float_fuel > 0 && !place_meeting(x, y+1, obj_Floor)) {
+
+		if (float_reset_speed) {
+			vspd = 0
+			float_reset_speed = false;
+		}
+			
+		if (float_fuel > 1) {
+			grv = float_accel;
+		}
+		else {
+			grv = init_grv;
+		}
+		--float_fuel;
+		with (obj_FloatBar) {
+			remaining_fuel = obj_Player.float_fuel;   
+			if (obj_Player.float_fuel == 0) {
+				draw = false
+			}
+		}
+	}
+	else {
+		float_reset_speed = true
+	}
+
+	//Gravity - add effect of gravity to verical speed
+	if (vspd <= vspd_cap) 
+	{
+		
+		vspd += grv;
+		
+		if (!key_float || float_fuel == 0) {
+			grv += accel;
+		}
+	} 
+
+	//Change sprite direction
+
+	if (key_right) {
+		image_xscale = 1.0;
+		part_type_direction(particle1,130,180,0,0);
+	}
+	else if (-key_left) {
+		image_xscale = -1.0;
+		part_type_direction(particle1,30,90,0,0);
+	}
+
+	//Change sprite
+	if (!place_meeting(x, y + 1, obj_Floor)) {
+		if (vspd > 0)  {
+			image_index = 1
+			sprite_index = spr_Fall;
+		}
+		else {
+			image_index = 2
+			sprite_index = spr_Jump;
+		}
+	}
+	else if (hmove == 0) {
+		sprite_index = spr_Player;
+	}
+	else {
+		sprite_index = spr_Walking;
+	}
+
+	//Check for collisions
+	if (place_meeting(x + hspd + sign(hspd), y, obj_Trampoline)) 
+	{
+		var block = instance_place(x + hspd + sign(hspd), y, obj_Trampoline)
+		with(block) {
+			hspd = obj_Player.hspd;
+			if (place_meeting(x + hspd, y, obj_Floor)) {
+				hspd = 0
+				obj_Player.hspd = 0;
+			}
+		}
+	}
+	else if (place_meeting(x + hspd + sign(hspd), y, obj_Floor)) 
+	{
+		while(!place_meeting(x + sign(hspd), y, obj_Floor))
+		{
+			x += sign(hspd);
+		}
+		hspd = 0;
+	}
+
+	if ( x + hspd < room_width - 40 && x + hspd > 40) {  
+		x += hspd;
+	}
+
+
+	if (vspd > grv && place_meeting(x, y + vspd, obj_Trampoline)) {
+
+		var block = instance_place(x, y + vspd, obj_Trampoline)
+		vspd = -18
+		grv = init_grv;
+		
+		with(block) {
+			image_speed = .8;
+		}
+		
+		/*
+		while (!place_meeting(x, y + sign(vspd), obj_Floor)) 
+		{
+				y += sign(vspd);
+		}
+		vspd = 0;
+		//grv = init_grv;
+		*/
+		
+		audio_play_sound(sfx_Boing, 10, false)
+	}
+
+	else if (place_meeting(x, y + vspd, obj_CollapsingFloor)) {
+		var block = instance_place(x, y + vspd, obj_CollapsingFloor)
+		
+		while (!place_meeting(x, y + sign(vspd), block)) 
+		{
+			y += sign(vspd);
+		}
+		
+		if (block.timer >= 0) {
+			while (!place_meeting(x, y + sign(vspd), obj_Floor)) 
+			{
+				y += sign(vspd);
+			}
+			vspd = 0;
+			grv = init_grv;
+			dbl_jump = true;
+		}
+	}
+	else if (place_meeting(x, y + vspd + sign(vspd), obj_Floor)) 
+	{
+		uncollide()
+		
+		while (!place_meeting(x, y + sign(vspd), obj_Floor)) 
+		{
+			show_debug_message("balrgh2")
+			y += sign(vspd);
+		}
+		vspd = 0;
+		grv = init_grv;
+	}
+
+	y += vspd;
+
+	//Generate dust cloud effect while walking
+
+	if (emit_burst && place_meeting(x, y+1, obj_Floor) && hspd != 0 && !place_meeting(x, y+1, obj_Ice)) {
+		part_emitter_region(dust_cloud,emitter1,x,x,y + 60, y + 60,0,0);
+		part_emitter_burst(dust_cloud,emitter1,particle1,1);
+	}
+	if (emit_burst) {
+		emit_burst = false;
+	}
+	else  {
+		emit_burst = true
+	}
+
+	}
+	
+	///Check if pitfall
+
+	if (y - sprite_get_height(spr_Player) > room_height + 5) 
+	{
+		shieldTime = 0
+		invincibility = false
+		drawShield = false
+		audio_play_sound(sfx_Lose, 10, false)
+		restart_level()
+	}
+	
+	///Camera movement - Move and ease view/camera as player moves through room
+	view_xview[0] += ((x - view_wview[0]/2) - view_xview[0]) * 0.1;
+
+	if (view_xview[0] < 0) {
+		view_xview[0] = 0;
+	}
+	if (view_xview[0] + view_wview[0] > room_width) {
+		view_xview[0] = room_width - view_wview[0];
+	}
+
+	view_yview[0] += ((y - view_hview[0] * .6) - view_yview[0]) * 0.1;
+
+	if (view_yview[0] < 0) {
+		view_yview[0] = 0;
+	}
+	if (view_yview[0] + view_hview[0] > room_height) {
+		view_yview[0] = room_height - view_hview[0];
+	}
+
+// COLLISION EVENT - slime or spike
+	///Game Over
+	if (!invincibility) {
+		audio_play_sound(sfx_Lose, 10, false)
+		restart_level()
+	}
+	
+// COLLISION EVENT - falling spike
+	///Game Over
+	if (invincibility) {
+		with (other) {
+			audio_play_sound(snd_Explode, 10, false)
+			part_emitter_region(Sname,emitter1,x,x,y,y,0,0);
+			part_emitter_burst(Sname,emitter1,particle1,8);
+			instance_destroy();
+		}
+	}
+	else if (other.active) {
+		audio_play_sound(sfx_Lose, 10, false)
+		restart_level();
+	}
+	
+// COLLISION EVENT - float powerup
+	///Activate power up
+	if (other.active) {
+		instance_create(0,0, obj_FloatBar);
+		float_fuel = max_float_fuel * room_speed
+		
+		with (obj_FloatBar) {
+			init_fuel = obj_Player.float_fuel
+			remaining_fuel = obj_Player.float_fuel
+			draw = true;
+		}
+		
+		audio_play_sound(sfx_Chime, 10, false)
+		
+		part_emitter_region(sparkles,emitter2,x,x,y,y,0,0);
+		part_emitter_burst(sparkles,emitter2,particle2,8);
+	}
+
+	//SHOW FUEL GAUGE
+	with (other) {
+		visible = false
+		active = false
+	}
+
+// COLLISION EVENT - shield powerup
+	if (other.active) {
+		invincibility = true;
+		drawShield = true;
+		shieldTime = shieldDuration
+		alarm[0] = .25 * room_speed;
+		
+		audio_play_sound(sfx_Chime, 10, false)
+		
+		part_emitter_region(sparkles,emitter2,x,x,y,y,0,0);
+		part_emitter_burst(sparkles,emitter2,particle2,8);
+	}
+
+	with (other) {
+		//instance_destroy()
+		visible = false
+		active = false
+	}
+	
+// DRAW EVENT  - drawing ever new frame
+	draw_self()
+
+	if (invincibility && drawShield) {
+		
+		draw_set_color(c_red);
+		draw_set_alpha(.1);
+		draw_circle(x , y, 70, false);
+		draw_set_alpha(1);
+
+	}
